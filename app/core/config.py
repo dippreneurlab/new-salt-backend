@@ -38,16 +38,20 @@ class Settings(BaseSettings):
         if not self.postgres_db:
             return None
 
-        if self.cloud_sql_connection_name:
-            host = f"/cloudsql/{self.cloud_sql_connection_name}"
-        else:
-            host = self.postgres_host or "127.0.0.1"
-
-        port = self.postgres_port or 5432
         user = self.postgres_user or ""
         password = self.postgres_password or ""
-
-        return f"postgresql://{user}:{password}@{host}:{port}/{self.postgres_db}"
+        
+        # Cloud SQL with Unix socket (Cloud Run)
+        if self.cloud_sql_connection_name:
+            # Format for Unix socket: postgresql://user:password@/database?host=/cloudsql/connection_name
+            host_path = f"/cloudsql/{self.cloud_sql_connection_name}"
+            return f"postgresql://{user}:{password}@/{self.postgres_db}?host={host_path}"
+        
+        # TCP connection (local or external)
+        else:
+            host = self.postgres_host or "127.0.0.1"
+            port = self.postgres_port or 5432
+            return f"postgresql://{user}:{password}@{host}:{port}/{self.postgres_db}"
 
     @classmethod
     def settings_customise_sources(
