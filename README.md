@@ -1,4 +1,4 @@
-# Salt XC Quote Hub — Backend (FastAPI)
+# Salt XC Quote Hub — Backend
 
 FastAPI service (Python 3.12) that fronts Postgres/Cloud SQL for pipeline, quotes, overhead, storage, roles, and metadata. Auth is enforced via Firebase ID tokens; all callers must present a valid Bearer token.
 
