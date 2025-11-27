@@ -11,9 +11,13 @@ RUN python -m venv /opt/venv && /opt/venv/bin/pip install --no-cache-dir -r requ
 FROM base AS runtime
 WORKDIR /app
 ENV PATH="/opt/venv/bin:$PATH"
-ENV PORT=5010
+
+# Cloud Run requires the container to listen on $PORT (default 8080)
+ENV PORT=8080
 
 COPY --from=builder /opt/venv /opt/venv
+COPY . .
 
-EXPOSE 5010
-CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "5010"]
+EXPOSE 8080
+
+CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8080"]
