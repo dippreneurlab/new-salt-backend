@@ -1,25 +1,30 @@
+# Ignore files that should NOT be in the Docker image
 .git
 .github
-node_modules
-functions/node_modules
-.next
-coverage
-dist
-tmp
-**/__pycache__
-**/*.pyc
+.vscode
+__pycache__
+*.pyc
+*.pyo
+*.pyd
 *.log
 .DS_Store
+
+# Virtual environments
+.venv
+env
+ENV
+venv
+
+# Local env files
 .env
 .env.*
+!.env.example
+
+# Temp folders
+tmp
+dist
+coverage
+
+# Docker / compose / dev configs
+docker-compose.yml
 README.md
-public
-components
-app
-hooks
-lib
-utils
-types
-package.json
-pnpm-lock.yaml
-tsconfig.json
