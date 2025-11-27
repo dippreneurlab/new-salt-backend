@@ -1,4 +1,4 @@
-name: GCP Cloud Run Frontend CI CD
+name: GCP Cloud Run Backend CI CD
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - master
 
 env:
-  SERVICE_NAME: salthub-new
+  SERVICE_NAME: salthub-new-backend
   REGION: us-central1
   REPOSITORY: salthub-new-backend
   PROJECT_ID: bangladeshchallenge-88b13
