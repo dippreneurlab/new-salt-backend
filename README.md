@@ -18,18 +18,18 @@ FastAPI service (Python 3.12) that fronts Postgres/Cloud SQL for pipeline, quote
   - `POSTGRES_SSL` (set to `false` for local non-SSL connections).
   - `FB_PROJECT_ID`, `FB_CLIENT_EMAIL`, `FB_PRIVATE_KEY` (escaped with `\\n`).
   - `CORS_ORIGINS` (comma-separated; defaults to `*` if unset).
-  - `API_PREFIX` (default `/api`), `PORT` (default `5010`).
+  - `API_PREFIX` (default `/api`), `PORT` (default `5000`, overrides with env `PORT`).
 
 ## Running Locally
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env  # fill in values
-uvicorn app.main:app --reload --port 5010
+uvicorn app.main:app --reload --port 5000
 ```
 Requires a reachable Postgres instance with the expected schema (see `cloudsql_schema.sql` in the frontend repo for reference).
 
 ## Deployment Notes
-- Expose port `5010`.
+- Expose port `5000` (or your platform-provided `PORT`, e.g., Cloud Run).
 - Ensure the service has access to Postgres/Cloud SQL and Firebase service account credentials.
 - CORS should include the frontend origins (e.g., `http://localhost:3000` or your deployed host).

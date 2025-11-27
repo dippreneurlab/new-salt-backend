@@ -20,9 +20,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Explicitly allow local frontend origins without relying on env vars
+DEFAULT_CORS_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins or ["*"],
+    allow_origins=settings.cors_origins or DEFAULT_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

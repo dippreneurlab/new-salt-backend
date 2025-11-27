@@ -1,5 +1,6 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
 from typing import List, Optional
+from pydantic_settings import BaseSettings, SettingsConfigDict, PydanticBaseSettingsSource
 
 
 class Settings(BaseSettings):
@@ -9,8 +10,8 @@ class Settings(BaseSettings):
         extra="allow",
     )
 
+    port: int = int(os.getenv("PORT", 5000))
     api_prefix: str = "/api"
-    port: int = 8080  # Cloud Run default
 
     # Database
     database_url: Optional[str] = None
@@ -37,7 +38,6 @@ class Settings(BaseSettings):
         if not self.postgres_db:
             return None
 
-        # Cloud SQL socket path if using connector
         if self.cloud_sql_connection_name:
             host = f"/cloudsql/{self.cloud_sql_connection_name}"
         else:
@@ -52,22 +52,30 @@ class Settings(BaseSettings):
     @classmethod
     def settings_customise_sources(
         cls,
-        init_settings,
-        env_settings,
-        dotenv_settings,
-        file_secret_settings,
-    ):
-        # Wrap env parser to handle CORS list conversion correctly
-        def parse_env(s):
-            data = env_settings(s)
-            val = data.get("cors_origins")
-            if isinstance(val, str):
-                data["cors_origins"] = [v.strip() for v in val.split(",") if v.strip()]
-            return data
-
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Customize settings sources to parse CORS origins from comma-separated string."""
+        
+        class CustomEnvSettings(PydanticBaseSettingsSource):
+            def get_field_value(self, field, field_name):
+                value = env_settings.get_field_value(field, field_name)
+                
+                # Parse cors_origins if it's a comma-separated string
+                if field_name == "cors_origins" and isinstance(value[0] if value else None, str):
+                    return ([v.strip() for v in value[0].split(",") if v.strip()], field_name, False)
+                
+                return value
+            
+            def __call__(self):
+                return env_settings()
+        
         return (
             init_settings,
-            parse_env,
+            CustomEnvSettings(settings_cls),
             dotenv_settings,
             file_secret_settings,
         )
