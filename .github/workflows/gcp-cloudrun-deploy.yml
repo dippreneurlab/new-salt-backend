@@ -1,0 +1,61 @@
+name: GCP Cloud Run Backend CI CD
+
+on:
+  push:
+    branches:
+      - master
+
+env:
+  SERVICE_NAME: salthub-new
+  REGION: us-central1
+  REPOSITORY: salthub-new-backend
+  PROJECT_ID: bangladeshchallenge-88b13
+  IMAGE: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}
+  PORT: 5010
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Authenticate to Google Cloud
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      # Setup Cloud SDK (gcloud)
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      # Enable Docker credential helper for gcloud
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      # Build image locally with Docker
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ env.IMAGE }}:latest .
+
+      # Push image to Artifact Registry
+      - name: Push Docker image
+        run: |
+          docker push ${{ env.IMAGE }}:latest
+
+      # Deploy to Cloud Run
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image ${{ env.IMAGE }}:latest \
+            --region ${{ env.REGION }} \
+            --platform managed \
+            --allow-unauthenticated \
+            --port ${{ env.PORT }} \
+            --quiet
