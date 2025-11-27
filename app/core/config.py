@@ -3,7 +3,12 @@ from typing import List, Optional
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="allow")
+    model_config = SettingsConfigDict(
+        # Load production overrides first when present, then fall back to local .env.
+        env_file=(".env.production", ".env"),
+        case_sensitive=False,
+        extra="allow",
+    )
 
     api_prefix: str = "/api"
     port: int = 5010
