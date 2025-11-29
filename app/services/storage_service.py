@@ -2,7 +2,7 @@ import json
 from typing import Any, Dict, List, Optional
 
 from ..core.database import execute, fetch, fetchrow
-from ..models.pipeline import PipelineEntry
+from ..models.pipeline import PipelineEntry, PipelineChange
 from ..services.pipeline_service import (
     build_pipeline_changelog,
     get_pipeline_entries_for_user,
