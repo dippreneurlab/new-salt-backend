@@ -5,6 +5,7 @@ from typing import Iterable, List, Optional, Sequence
 
 from ..core.database import execute, fetch, fetchrow
 from ..models.pipeline import PipelineChange, PipelineEntry
+from .float_service import create_float_project
 
 PIPELINE_CHANGELOG_KEY = "pipeline-changelog"
 USER_STORAGE_TABLE_SQL = """
@@ -346,7 +347,9 @@ async def create_pipeline_entry(user_id: str, entry: PipelineEntry, email: Optio
             row,
         )
         if saved:
-            return _from_db_row(saved)
+            saved_entry = _from_db_row(saved)
+            await create_float_project(saved_entry)
+            return saved_entry
 
         # If we reach here, the code was taken in the meantime; bump to the next one and retry.
         entry.projectCode = await get_next_project_code(target_year)

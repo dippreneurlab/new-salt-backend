@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: List[str] = ["*"]
 
+    # Float integration
+    float_api_key: Optional[str] = None
+    float_base_url: str = "https://api.float.com/v3"
+
     def build_db_url(self) -> Optional[str]:
         if self.database_url:
             return self.database_url
