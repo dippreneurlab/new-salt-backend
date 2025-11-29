@@ -61,7 +61,8 @@ def _parse_pipeline_value(value: Any) -> List[PipelineEntry]:
 async def get_storage_value(user_id: str, key: str) -> Optional[Any]:
     if key == PIPELINE_KEY:
         entries = await get_pipeline_entries_for_user(user_id)
-        return json.dumps([e.model_dump() for e in entries])
+        # Ensure datetimes are serialized to ISO strings for CloudStorage consumers
+        return json.dumps([e.model_dump(mode="json") for e in entries])
     if key == QUOTES_KEY:
         quotes = await get_quotes_for_user(user_id)
         return json.dumps(quotes)
@@ -129,10 +130,11 @@ async def list_storage_values(user_id: str) -> Dict[str, Any]:
     pipeline_entries = await get_pipeline_entries_for_user(user_id)
     quotes = await get_quotes_for_user(user_id)
 
-    values[PIPELINE_KEY] = json.dumps([e.model_dump() for e in pipeline_entries])
+    # Use json mode to serialize datetimes as ISO strings
+    values[PIPELINE_KEY] = json.dumps([e.model_dump(mode="json") for e in pipeline_entries])
     values[QUOTES_KEY] = json.dumps(quotes)
 
     changelog = build_pipeline_changelog(pipeline_entries, values.get("email") or user_id)
-    values[PIPELINE_CHANGELOG_KEY] = json.dumps([c.model_dump() for c in changelog])
+    values[PIPELINE_CHANGELOG_KEY] = json.dumps([c.model_dump(mode="json") for c in changelog])
 
     return values
