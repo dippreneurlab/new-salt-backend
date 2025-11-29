@@ -27,7 +27,7 @@ app = FastAPI(
 DEFAULT_CORS_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "https://salthub-new-628837369388.us-central1.run.app",
+    "https://salthub-new-backend-628837369388.us-central1.run.app",
 ]
 # Allow any *.run.app host as a safety net for preview deployments
 RUN_APP_ORIGIN_REGEX = r"https://.*run\.app"
