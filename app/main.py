@@ -1,6 +1,9 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from .core.config import settings
 from .core.database import close_pool, get_pool
@@ -29,19 +32,14 @@ DEFAULT_CORS_ORIGINS = [
 # Allow any *.run.app host as a safety net for preview deployments
 RUN_APP_ORIGIN_REGEX = r"https://.*run\.app"
 
-# Merge configured origins with our safe defaults and de-dupe
-configured_origins = settings.cors_origins or []
-if "*" in configured_origins:
-    allowed_origins = ["*"]
-    origin_regex = RUN_APP_ORIGIN_REGEX
-else:
-    allowed_origins = list(dict.fromkeys(configured_origins + DEFAULT_CORS_ORIGINS))
-    origin_regex = RUN_APP_ORIGIN_REGEX
+# Merge configured origins with our safe defaults (drop '*' because we set credentials=True)
+configured_origins = [o for o in settings.cors_origins or [] if o and o != "*"]
+allowed_origins = list(dict.fromkeys(DEFAULT_CORS_ORIGINS + configured_origins))
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_origin_regex=origin_regex,
+    allow_origin_regex=RUN_APP_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -59,3 +57,13 @@ app.include_router(metadata.router, prefix=settings.api_prefix, tags=["metadata"
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+STAFF_CSV_PATH = Path(__file__).resolve().parent.parent / "Salt_staff.csv"
+
+
+@app.get("/Salt_staff.csv")
+async def get_staff_csv():
+    if STAFF_CSV_PATH.exists():
+        return FileResponse(STAFF_CSV_PATH, media_type="text/csv")
+    raise HTTPException(status_code=404, detail="Staff CSV not found")
