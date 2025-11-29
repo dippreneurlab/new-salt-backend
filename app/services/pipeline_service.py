@@ -72,6 +72,15 @@ def _normalize_month(value: Optional[str]) -> Optional[str]:
     return trimmed
 
 
+def _iso_or_none(value: Optional[object]) -> Optional[str]:
+    """Normalize DB date/datetime to ISO string for Pydantic/JSON."""
+    if value is None:
+        return None
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
+    return str(value)
+
+
 async def _ensure_user(user_id: str, email: Optional[str]):
     safe_email = email or f"{user_id}@placeholder.local"
     await execute(
@@ -126,8 +135,8 @@ def _from_db_row(row: dict) -> PipelineEntry:
         region=row.get("region"),
         startMonth=row.get("start_month") or "",
         endMonth=row.get("end_month") or "",
-        startDate=row.get("start_date"),
-        endDate=row.get("end_date"),
+        startDate=_iso_or_none(row.get("start_date")),
+        endDate=_iso_or_none(row.get("end_date")),
         revenue=float(row.get("revenue") or 0),
         totalFees=float(row.get("total_fees") or 0),
         status=row.get("status"),
