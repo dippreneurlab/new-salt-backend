@@ -15,10 +15,6 @@ env
 ENV
 venv
 
-# Local env files
-.env
-.env.*
-!.env.example
 
 # Temp folders
 tmp
@@ -26,5 +22,4 @@ dist
 coverage
 
 # Docker / compose / dev configs
-docker-compose.yml
 README.md
