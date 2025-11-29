@@ -1,4 +1,3 @@
-from datetime import datetime
 from fastapi import APIRouter, Body, Depends, HTTPException
 
 from ..core.auth import get_current_user
@@ -6,10 +5,11 @@ from ..models.pipeline import PipelineEntry, PipelineResponse
 from ..models.user import AuthenticatedUser
 from ..services.pipeline_service import (
     build_pipeline_changelog,
+    create_pipeline_entry as create_pipeline_entry_service,
     delete_pipeline_entry,
     get_next_project_code,
     get_pipeline_entries_for_user,
-    upsert_pipeline_entry,
+    update_existing_pipeline_entry,
 )
 
 router = APIRouter()
@@ -30,11 +30,8 @@ async def create_pipeline_entry(payload: dict = Body(...), user: AuthenticatedUs
         raise HTTPException(status_code=400, detail="entry is required")
 
     entry = PipelineEntry.model_validate(entry_data)
-    if not entry.projectCode:
-        year = datetime.utcnow().strftime("%y")
-        entry.projectCode = await get_next_project_code(year)
 
-    saved = await upsert_pipeline_entry(user.uid, entry, user.email)
+    saved = await create_pipeline_entry_service(user.uid, entry, user.email)
     return saved
 
 
@@ -49,8 +46,11 @@ async def update_pipeline_entry(payload: dict = Body(...), user: AuthenticatedUs
     if not entry.projectCode:
         raise HTTPException(status_code=400, detail="projectCode is required")
 
-    saved = await upsert_pipeline_entry(user.uid, entry, user.email)
-    return saved
+    try:
+        saved = await update_existing_pipeline_entry(user.uid, entry, user.email)
+        return saved
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 @router.delete("/pipeline")

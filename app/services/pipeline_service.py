@@ -81,6 +81,28 @@ def _iso_or_none(value: Optional[object]) -> Optional[str]:
     return str(value)
 
 
+def _as_iso_string(value: Optional[object]) -> str:
+    """Convert possible datetime/date/str values to ISO formatted string."""
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if value is None:
+        return datetime.utcnow().isoformat()
+    return str(value)
+
+
+def _to_datetime(value: Optional[object]) -> Optional[datetime]:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date):
+        return datetime.combine(value, datetime.min.time())
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    return None
+
+
 async def _ensure_user(user_id: str, email: Optional[str]):
     safe_email = email or f"{user_id}@placeholder.local"
     await execute(
@@ -159,21 +181,61 @@ def _from_db_row(row: dict) -> PipelineEntry:
     )
 
 
+def _extract_year_from_code(code: Optional[str]) -> str:
+    """Get the 2-digit year portion from a project code, fallback to current UTC year."""
+    if code and "-" in code:
+        suffix = code.split("-")[-1]
+        if len(suffix) == 2 and suffix.isdigit():
+            return suffix
+    return datetime.utcnow().strftime("%y")
+
+
+async def _project_code_exists(code: str) -> bool:
+    row = await fetchrow(
+        "SELECT 1 FROM pipeline_opportunities WHERE project_code = %s",
+        [code],
+    )
+    return bool(row)
+
+
 def build_pipeline_changelog(entries: Iterable[PipelineEntry], user_email: str) -> List[PipelineChange]:
     changes: List[PipelineChange] = []
     for entry in entries:
-        date = entry.updatedAt or entry.createdAt or datetime.utcnow()
+        created_date = entry.createdAt or entry.updatedAt or datetime.utcnow()
+        updated_date = entry.updatedAt if entry.updatedAt and entry.createdAt else None
+
+        creator = entry.createdByEmail or entry.createdBy or user_email or "system"
+        updater = entry.updatedByEmail or entry.updatedBy or creator
+
+        # Always log an addition event
         changes.append(
             PipelineChange(
                 type="addition",
                 projectCode=entry.projectCode,
                 projectName=entry.programName,
                 client=entry.client,
-                description="Added/updated from Cloud SQL",
-                date=str(date),
-                user=entry.updatedByEmail or entry.createdByEmail or user_email or "system",
+                description="Created in Cloud SQL",
+                date=_as_iso_string(created_date),
+                user=str(creator),
             )
         )
+
+        # Log a change event only when updated_at is later than created_at
+        created_dt = _to_datetime(entry.createdAt)
+        updated_dt = _to_datetime(updated_date)
+        if created_dt and updated_dt and updated_dt > created_dt:
+            changes.append(
+                PipelineChange(
+                    type="change",
+                    projectCode=entry.projectCode,
+                    projectName=entry.programName,
+                    client=entry.client,
+                    description="Updated in Cloud SQL",
+                    date=_as_iso_string(updated_date),
+                    user=str(updater),
+                )
+            )
+
     return sorted(changes, key=lambda c: c.date, reverse=True)
 
 
@@ -246,10 +308,56 @@ async def get_pipeline_entries_for_user(user_id: Optional[str]) -> List[Pipeline
         FROM pipeline_opportunities po
         LEFT JOIN users cu ON cu.id = po.created_by
         LEFT JOIN users uu ON uu.id = po.updated_by
-        ORDER BY po.project_code ASC
+        ORDER BY po.created_at DESC, po.project_code DESC
         """
     )
     return [_from_db_row(r) for r in rows]
+
+
+async def create_pipeline_entry(user_id: str, entry: PipelineEntry, email: Optional[str]) -> PipelineEntry:
+    """
+    Insert a pipeline entry without overwriting an existing project_code.
+    If the supplied project_code already exists, we automatically assign the next available code.
+    """
+    await _ensure_user(user_id, email)
+
+    # Ensure the entry carries a project code and that it is unique
+    target_year = _extract_year_from_code(entry.projectCode)
+    if not entry.projectCode or await _project_code_exists(entry.projectCode):
+        entry.projectCode = await get_next_project_code(target_year)
+
+    attempt = 0
+    while attempt < 5:
+        row = _to_db_row(user_id, entry)
+        saved = await fetchrow(
+            """
+            INSERT INTO pipeline_opportunities (
+                project_code, owner, client, program_name, program_type, region,
+                start_date, end_date, start_month, end_month, revenue, total_fees, status,
+                accounts_fees, creative_fees, design_fees, strategic_planning_fees, media_fees,
+                creator_fees, social_fees, omni_fees, digital_fees, finance_fees,
+                created_by, updated_by
+            )
+            VALUES (
+                %(project_code)s, %(owner)s, %(client)s, %(program_name)s, %(program_type)s, %(region)s,
+                %(start_date)s, %(end_date)s, %(start_month)s, %(end_month)s, %(revenue)s, %(total_fees)s, %(status)s,
+                %(accounts_fees)s, %(creative_fees)s, %(design_fees)s, %(strategic_planning_fees)s, %(media_fees)s,
+                %(creator_fees)s, %(social_fees)s, %(omni_fees)s, %(digital_fees)s, %(finance_fees)s,
+                %(created_by)s, %(updated_by)s
+            )
+            ON CONFLICT (project_code) DO NOTHING
+            RETURNING *
+            """,
+            row,
+        )
+        if saved:
+            return _from_db_row(saved)
+
+        # If we reach here, the code was taken in the meantime; bump to the next one and retry.
+        entry.projectCode = await get_next_project_code(target_year)
+        attempt += 1
+
+    raise RuntimeError("Failed to create a unique project code for the pipeline entry after multiple attempts")
 
 
 async def upsert_pipeline_entry(user_id: str, entry: PipelineEntry, email: Optional[str]) -> PipelineEntry:
@@ -303,6 +411,15 @@ async def upsert_pipeline_entry(user_id: str, entry: PipelineEntry, email: Optio
     if not saved:
         raise RuntimeError("Failed to upsert pipeline entry")
     return _from_db_row(saved)
+
+
+async def update_existing_pipeline_entry(user_id: str, entry: PipelineEntry, email: Optional[str]) -> PipelineEntry:
+    """
+    Update an existing pipeline entry. Raises if the project_code does not exist.
+    """
+    if not await _project_code_exists(entry.projectCode or ""):
+        raise ValueError(f"Pipeline project {entry.projectCode} was not found")
+    return await upsert_pipeline_entry(user_id, entry, email)
 
 
 async def delete_pipeline_entry(project_code: str):
