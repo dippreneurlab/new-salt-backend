@@ -12,7 +12,7 @@ from .routers import metadata, overhead, pipeline, quotes, roles, storage
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await get_pool()  # Wrm pool on startup
+    await get_pool()  # Warm pool on startup
     yield
     await close_pool()
 
