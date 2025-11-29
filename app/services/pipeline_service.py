@@ -1,9 +1,12 @@
+import json
 from calendar import monthrange
 from datetime import date, datetime
 from typing import Iterable, List, Optional, Sequence
 
 from ..core.database import execute, fetch, fetchrow
 from ..models.pipeline import PipelineChange, PipelineEntry
+
+PIPELINE_CHANGELOG_KEY = "pipeline-changelog"
 
 
 def _normalize_status(status: Optional[str]) -> str:
@@ -202,39 +205,21 @@ def build_pipeline_changelog(entries: Iterable[PipelineEntry], user_email: str) 
     changes: List[PipelineChange] = []
     for entry in entries:
         created_date = entry.createdAt or entry.updatedAt or datetime.utcnow()
-        updated_date = entry.updatedAt if entry.updatedAt and entry.createdAt else None
-
         creator = entry.createdByEmail or entry.createdBy or user_email or "system"
-        updater = entry.updatedByEmail or entry.updatedBy or creator
 
-        # Always log an addition event
+        # Only show a single “added” event; we intentionally skip “updated” events
+        # because consumers don't need to see Cloud SQL change noise.
         changes.append(
             PipelineChange(
                 type="addition",
                 projectCode=entry.projectCode,
                 projectName=entry.programName,
                 client=entry.client,
-                description="Created in Cloud SQL",
+                description="Added in Cloud SQL",
                 date=_as_iso_string(created_date),
                 user=str(creator),
             )
         )
-
-        # Log a change event only when updated_at is later than created_at
-        created_dt = _to_datetime(entry.createdAt)
-        updated_dt = _to_datetime(updated_date)
-        if created_dt and updated_dt and updated_dt > created_dt:
-            changes.append(
-                PipelineChange(
-                    type="change",
-                    projectCode=entry.projectCode,
-                    projectName=entry.programName,
-                    client=entry.client,
-                    description="Updated in Cloud SQL",
-                    date=_as_iso_string(updated_date),
-                    user=str(updater),
-                )
-            )
 
     return sorted(changes, key=lambda c: c.date, reverse=True)
 
@@ -422,8 +407,60 @@ async def update_existing_pipeline_entry(user_id: str, entry: PipelineEntry, ema
     return await upsert_pipeline_entry(user_id, entry, email)
 
 
-async def delete_pipeline_entry(project_code: str):
+async def _append_changelog_entry(user_id: str, entry: PipelineChange):
+    """
+    Persist changelog entries into user_storage to keep deletions visible to clients.
+    Uses existing user_storage table; no schema changes required.
+    """
+    try:
+        row = await fetchrow(
+            "SELECT storage_value FROM user_storage WHERE user_id = %s AND storage_key = %s",
+            [user_id, PIPELINE_CHANGELOG_KEY],
+        )
+        current = []
+        if row and row.get("storage_value"):
+            raw = row["storage_value"]
+            if isinstance(raw, str):
+                current = json.loads(raw)
+            else:
+                current = raw
+        current = current if isinstance(current, list) else []
+        current.insert(0, entry.model_dump(mode="json"))
+        await execute(
+            """
+            INSERT INTO user_storage (user_id, storage_key, storage_value)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (user_id, storage_key)
+            DO UPDATE SET storage_value = EXCLUDED.storage_value, updated_at = now()
+            """,
+            [user_id, PIPELINE_CHANGELOG_KEY, json.dumps(current)],
+        )
+    except Exception:
+        # Fail silently; deletion should not be blocked by changelog persistence.
+        return
+
+
+async def delete_pipeline_entry(project_code: str, user_id: str, user_email: Optional[str]):
+    """
+    Delete a pipeline entry and record a deletion event in pipeline changelog storage.
+    """
+    existing = await fetchrow(
+        "SELECT project_code, program_name, client FROM pipeline_opportunities WHERE project_code = %s",
+        [project_code],
+    )
     await execute("DELETE FROM pipeline_opportunities WHERE project_code = %s", [project_code])
+
+    if existing:
+        deletion_log = PipelineChange(
+            type="deletion",
+            projectCode=existing.get("project_code"),
+            projectName=existing.get("program_name"),
+            client=existing.get("client"),
+            description="Deleted in Cloud SQL",
+            date=datetime.utcnow().isoformat(),
+            user=user_email or user_id or "system",
+        )
+        await _append_changelog_entry(user_id, deletion_log)
 
 
 async def get_next_project_code(year: str) -> str:

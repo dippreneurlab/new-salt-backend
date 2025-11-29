@@ -58,7 +58,7 @@ async def remove_pipeline_entry(payload: dict = Body(...), user: AuthenticatedUs
     project_code = payload.get("projectCode") if isinstance(payload, dict) else None
     if not project_code:
         raise HTTPException(status_code=400, detail="projectCode is required")
-    await delete_pipeline_entry(project_code)
+    await delete_pipeline_entry(project_code, user.uid, user.email)
     return {"ok": True}
 
 

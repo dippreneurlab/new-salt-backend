@@ -58,6 +58,48 @@ def _parse_pipeline_value(value: Any) -> List[PipelineEntry]:
     return entries
 
 
+def _parse_changelog_value(value: Any) -> List[Dict[str, Any]]:
+    try:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, list) else []
+        if isinstance(value, list):
+            return value
+        return []
+    except Exception:
+        return []
+
+
+def _merge_changelog(existing: List[Dict[str, Any]], additions: List[PipelineChange]) -> List[Dict[str, Any]]:
+    combined: List[Dict[str, Any]] = []
+    seen = set()
+
+    def _key(item: Dict[str, Any]):
+        return (item.get("type"), item.get("projectCode"), item.get("date"))
+
+    for item in existing:
+        if not isinstance(item, dict):
+            continue
+        k = _key(item)
+        if k in seen:
+            continue
+        seen.add(k)
+        combined.append(item)
+
+    for change in additions:
+        item = change.model_dump(mode="json")
+        k = _key(item)
+        if k in seen:
+            continue
+        seen.add(k)
+        combined.append(item)
+
+    combined.sort(key=lambda x: x.get("date") or "", reverse=True)
+    return combined
+
+
 async def get_storage_value(user_id: str, key: str) -> Optional[Any]:
     if key == PIPELINE_KEY:
         entries = await get_pipeline_entries_for_user(user_id)
@@ -66,6 +108,16 @@ async def get_storage_value(user_id: str, key: str) -> Optional[Any]:
     if key == QUOTES_KEY:
         quotes = await get_quotes_for_user(user_id)
         return json.dumps(quotes)
+    if key == PIPELINE_CHANGELOG_KEY:
+        entries = await get_pipeline_entries_for_user(user_id)
+        changelog = build_pipeline_changelog(entries, user_id)
+        stored = await fetchrow(
+            "SELECT storage_value FROM user_storage WHERE user_id = %s AND storage_key = %s",
+            [user_id, PIPELINE_CHANGELOG_KEY],
+        )
+        existing = _parse_changelog_value(stored.get("storage_value") if stored else None)
+        merged = _merge_changelog(existing, changelog)
+        return json.dumps(merged)
 
     await _ensure_storage_table()
     row = await fetchrow(
@@ -134,7 +186,9 @@ async def list_storage_values(user_id: str) -> Dict[str, Any]:
     values[PIPELINE_KEY] = json.dumps([e.model_dump(mode="json") for e in pipeline_entries])
     values[QUOTES_KEY] = json.dumps(quotes)
 
-    changelog = build_pipeline_changelog(pipeline_entries, values.get("email") or user_id)
-    values[PIPELINE_CHANGELOG_KEY] = json.dumps([c.model_dump(mode="json") for c in changelog])
+    additions = build_pipeline_changelog(pipeline_entries, values.get("email") or user_id)
+    existing_changelog = _parse_changelog_value(values.get(PIPELINE_CHANGELOG_KEY))
+    merged_changelog = _merge_changelog(existing_changelog, additions)
+    values[PIPELINE_CHANGELOG_KEY] = json.dumps(merged_changelog)
 
     return values
