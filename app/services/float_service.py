@@ -40,12 +40,15 @@ def _build_payload(entry: PipelineEntry) -> Dict[str, Any]:
     start_date = _to_date_only(entry.startDate)
     end_date = _to_date_only(entry.endDate)
 
-    # Derive client_id and project_stage_id from system project data
-    client_id = _extract_digits(entry.projectCode)
-    if client_id is not None:
-        payload["client_id"] = client_id
+    # Push system project code into Float's project_code for traceability
     if entry.projectCode:
-        payload["project_stage_id"] = entry.projectCode
+        payload["project_code"] = entry.projectCode
+
+    # Derive client_id and project_stage_id from system project data (digits only)
+    numeric_code = _extract_digits(entry.projectCode)
+    if numeric_code is not None:
+        payload["client_id"] = numeric_code
+        payload["project_stage_id"] = numeric_code
     if start_date:
         payload["start_date"] = start_date
     if end_date:
