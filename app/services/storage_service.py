@@ -109,6 +109,7 @@ async def get_storage_value(user_id: str, key: str) -> Optional[Any]:
         quotes = await get_quotes_for_user(user_id)
         return json.dumps(quotes)
     if key == PIPELINE_CHANGELOG_KEY:
+        await _ensure_storage_table()
         entries = await get_pipeline_entries_for_user(user_id)
         changelog = build_pipeline_changelog(entries, user_id)
         stored = await fetchrow(

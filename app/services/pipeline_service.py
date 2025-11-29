@@ -7,6 +7,16 @@ from ..core.database import execute, fetch, fetchrow
 from ..models.pipeline import PipelineChange, PipelineEntry
 
 PIPELINE_CHANGELOG_KEY = "pipeline-changelog"
+USER_STORAGE_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS user_storage (
+  id SERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  storage_key TEXT NOT NULL,
+  storage_value JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(user_id, storage_key)
+);
+"""
 
 
 def _normalize_status(status: Optional[str]) -> str:
@@ -413,6 +423,9 @@ async def _append_changelog_entry(user_id: str, entry: PipelineChange):
     Uses existing user_storage table; no schema changes required.
     """
     try:
+        # Ensure storage table exists (defensive for new deployments)
+        await execute(USER_STORAGE_TABLE_SQL)
+
         row = await fetchrow(
             "SELECT storage_value FROM user_storage WHERE user_id = %s AND storage_key = %s",
             [user_id, PIPELINE_CHANGELOG_KEY],
