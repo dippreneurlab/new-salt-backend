@@ -10,17 +10,17 @@ from .core.database import close_pool, get_pool
 from .routers import metadata, overhead, pipeline, quotes, roles, storage
 
 
-# @asynccontextmanager
-# async def lifespan(app: FastAPI):
-#     await get_pool()  # Warm pool on startup
-#     yield
-#     await close_pool()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await get_pool()  # Warm pool on startup
+    yield
+    await close_pool()
 
 
 app = FastAPI(
     title="QuoteHub Backend",
     version="1.0.0",
-    # lifespan=lifespan,
+    lifespan=lifespan,
 )
 
 # Explicitly allow local + Cloud Run frontend origins without relying on env vars
